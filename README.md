@@ -51,7 +51,7 @@ K380 Function Keys Manager 是一个现代化的 macOS 应用程序，专门解�
 
 ### 方式一：下载发布版本（推荐）
 
-1. 前往 [Releases 页面](https://github.com/your-username/k380-function-keys-conf/releases)
+1. 前往 [Releases 页面](https://github.com/XiaoDcs/k380-function-keys-manager/releases)
 2. 下载最新版本的 `.dmg` 文件
 3. 双击安装，拖拽到 Applications 文件夹
 4. 首次启动按照权限设置指南操作
@@ -60,8 +60,8 @@ K380 Function Keys Manager 是一个现代化的 macOS 应用程序，专门解�
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/k380-function-keys-conf.git
-cd k380-function-keys-conf
+git clone https://github.com/XiaoDcs/k380-function-keys-manager.git
+cd k380-function-keys-manager
 
 # 安装依赖
 npm install
@@ -81,11 +81,71 @@ npm run build
 
 首次使用需要授予输入监控权限：
 
+#### 基本设置步骤
+
 1. 打开 `系统设置` → `隐私与安全性` → `输入监控`
 2. 点击 `+` 添加应用
 3. 选择已安装的 `K380 Function Keys Manager.app`
 4. 确保应用已勾选
 5. 重启应用生效
+
+#### 📦 打包版本特别说明
+
+如果使用从 Releases 下载的打包版本，可能需要额外的安全设置：
+
+**第一次运行时：**
+1. 右键点击应用，选择"打开"而不是双击
+2. 在安全提示中点击"打开"
+3. 如果提示"无法验证开发者"，到`系统设置` → `隐私与安全性`中点击"仍要打开"
+
+**如果遇到 "K380 not found" 错误：**
+
+运行权限修复脚本：
+```bash
+# 下载并运行权限修复脚本
+curl -O https://raw.githubusercontent.com/XiaoDcs/k380-function-keys-manager/main/scripts/fix_app_permissions.sh
+chmod +x fix_app_permissions.sh
+./fix_app_permissions.sh
+```
+
+或手动执行以下命令：
+```bash
+# 清除隔离属性
+sudo xattr -dr com.apple.quarantine "/Applications/K380 Function Keys Manager.app"
+
+# 重新签名应用
+sudo codesign --force --deep --sign - "/Applications/K380 Function Keys Manager.app"
+```
+
+#### 🔍 权限问题诊断
+
+应用内置了权限检查工具：
+1. 打开应用 → `工具` 标签页
+2. 点击 `检查权限` 按钮
+3. 根据检查结果进行相应操作
+
+**常见权限状态：**
+- ✅ **权限正常** - 可以直接使用所有功能
+- ⚠️ **需要密码** - 功能正常，使用时需要输入管理员密码
+- ❌ **权限缺失** - 需要在系统设置中添加权限
+- ⚠️ **设备未找到** - 检查 K380 蓝牙连接状态
+
+#### 🚨 故障排除
+
+**问题：设置后仍显示权限错误**
+- 完全退出应用并重新启动
+- 尝试重启系统
+- 在权限列表中删除应用后重新添加
+
+**问题：K380 已连接但提示设备未找到**  
+- 检查是否有其他应用占用 K380
+- 尝试断开并重新连接 K380
+- 重启蓝牙服务：`sudo pkill bluetoothd`
+
+**问题：打包版本无法运行**
+- 运行上述权限修复脚本
+- 确保从可信来源下载应用
+- 检查 macOS 版本兼容性（需要 10.15+）
 
 > **提示**：应用会自动检测权限状态并提供详细的设置指导
 
@@ -136,7 +196,7 @@ npm run debug
 ### 项目结构
 
 ```
-k380-function-keys-conf/
+k380-function-keys-manager/
 ├── src/                    # 源代码
 │   ├── main.js            # Electron 主进程
 │   ├── renderer.js        # 渲染进程
@@ -234,8 +294,8 @@ A: 删除应用，并清理 `~/Library/Preferences/` 中的配置文件。
 
 ## 📞 联系支持
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/k380-function-keys-conf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/k380-function-keys-conf/discussions)
+- **Issues**: [GitHub Issues](https://github.com/XiaoDcs/k380-function-keys-manager/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/XiaoDcs/k380-function-keys-manager/discussions)
 - **Email**: [your-email@example.com](mailto:your-email@example.com)
 
 ---

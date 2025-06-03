@@ -17,6 +17,8 @@ class K380Manager {
     this.monitoringActive = false;
     this.lastAppliedState = null;
     this.bluetoothCheckInterval = null;
+    this.isQuitting = false;
+    this.debugLogs = [];
     
     // 添加密码缓存配置
     this.cachedPassword = null;
@@ -121,16 +123,52 @@ class K380Manager {
 
   getExecutablePath(executable) {
     if (app.isPackaged) {
-      // extraResources 将文件放在 Resources/bin/ 下
-      const resourcesPath = path.join(process.resourcesPath, 'bin', executable);
+      // 尝试多个可能的路径
+      const possiblePaths = [
+        path.join(process.resourcesPath, 'bin', executable),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'bin', executable),
+        path.join(path.dirname(process.execPath), '..', 'Resources', 'bin', executable),
+        path.join(process.resourcesPath, '..', 'bin', executable)
+      ];
       
-      if (fs.existsSync(resourcesPath)) {
-        console.log(`Found executable at: ${resourcesPath}`);
-        return resourcesPath;
+      console.log(`Looking for executable: ${executable}`);
+      console.log(`Process resources path: ${process.resourcesPath}`);
+      console.log(`Process exec path: ${process.execPath}`);
+      
+      for (const possiblePath of possiblePaths) {
+        console.log(`Checking path: ${possiblePath}`);
+        if (fs.existsSync(possiblePath)) {
+          console.log(`✅ Found executable at: ${possiblePath}`);
+          
+          // 检查文件权限
+          try {
+            const stats = fs.statSync(possiblePath);
+            console.log(`File permissions: ${stats.mode.toString(8)}`);
+            if (stats.mode & parseInt('111', 8)) {
+              console.log('✅ File has execute permissions');
+            } else {
+              console.log('❌ File lacks execute permissions');
+              // 尝试设置执行权限
+              fs.chmodSync(possiblePath, '755');
+              console.log('✅ Execute permissions set');
+            }
+          } catch (error) {
+            console.error('Error checking file permissions:', error);
+          }
+          
+          return possiblePath;
+        }
       }
       
-      console.error(`Executable ${executable} not found at: ${resourcesPath}`);
-      return resourcesPath; // 返回预期路径用于错误信息
+      console.error(`❌ Executable ${executable} not found in any of the expected locations`);
+      console.error('Available files in Resources:', fs.readdirSync(process.resourcesPath));
+      
+      if (fs.existsSync(path.join(process.resourcesPath, 'bin'))) {
+        console.error('Files in Resources/bin:', fs.readdirSync(path.join(process.resourcesPath, 'bin')));
+      }
+      
+      // 返回第一个路径用于错误信息
+      return possiblePaths[0];
     }
     
     // 开发模式使用相对路径
@@ -168,11 +206,28 @@ class K380Manager {
 
   createTray() {
     let trayIcon;
+    
     try {
-      // 尝试使用系统内置图标
-      trayIcon = nativeImage.createFromNamedImage('NSImageNameComputer', [16, 16]);
+      // 优先使用专用的托盘图标
+      const iconPath = this.getTrayIconPath();
+      
+      if (iconPath && fs.existsSync(iconPath)) {
+        console.log(`Using custom tray icon: ${iconPath}`);
+        trayIcon = nativeImage.createFromPath(iconPath);
+        
+        // 确保图标大小合适
+        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+        
+        // 设置为模板图像，让系统自动处理深色/浅色模式
+        trayIcon.setTemplateImage(true);
+      } else {
+        console.log('Custom tray icon not found, using system icon');
+        // 降级使用系统内置图标
+        trayIcon = nativeImage.createFromNamedImage('NSImageNameComputer', [16, 16]);
+      }
     } catch (e) {
-      // 降级使用空图标
+      console.error('Error creating tray icon:', e);
+      // 最后降级使用空图标
       trayIcon = nativeImage.createEmpty();
     }
     
@@ -180,6 +235,98 @@ class K380Manager {
     this.updateTrayMenu();
     
     this.tray.setToolTip('K380 Function Keys Manager');
+  }
+
+  // 新增：获取托盘图标路径的方法
+  getTrayIconPath() {
+    const iconPreference = this.store.get('trayIconType', 'tray'); // 'tray', 'logo', 'system'
+    
+    if (iconPreference === 'system') {
+      return null; // 使用系统图标
+    }
+    
+    let iconPath;
+    
+    if (app.isPackaged) {
+      // 打包后的路径
+      const resourcesPath = process.resourcesPath;
+      
+      if (iconPreference === 'logo') {
+        // 使用主logo
+        iconPath = path.join(resourcesPath, 'assets', 'icons', 'icon.png');
+      } else {
+        // 使用专用托盘图标 (默认)
+        // 检测系统是否为深色模式 (在macOS上)
+        const isDarkMode = this.isDarkMode();
+        
+        if (isDarkMode && fs.existsSync(path.join(resourcesPath, 'assets', 'icons', 'tray', 'tray-dark.png'))) {
+          iconPath = path.join(resourcesPath, 'assets', 'icons', 'tray', 'tray-dark.png');
+        } else {
+          iconPath = path.join(resourcesPath, 'assets', 'icons', 'tray', 'tray.png');
+        }
+      }
+    } else {
+      // 开发模式路径
+      if (iconPreference === 'logo') {
+        iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
+      } else {
+        const isDarkMode = this.isDarkMode();
+        
+        if (isDarkMode && fs.existsSync(path.join(__dirname, '..', 'assets', 'icons', 'tray', 'tray-dark.png'))) {
+          iconPath = path.join(__dirname, '..', 'assets', 'icons', 'tray', 'tray-dark.png');
+        } else {
+          iconPath = path.join(__dirname, '..', 'assets', 'icons', 'tray', 'tray.png');
+        }
+      }
+    }
+    
+    console.log(`Tray icon preference: ${iconPreference}, selected path: ${iconPath}`);
+    return iconPath;
+  }
+
+  // 新增：检测是否为深色模式
+  isDarkMode() {
+    try {
+      // 在macOS上检测深色模式
+      if (process.platform === 'darwin') {
+        const theme = execSync('defaults read -g AppleInterfaceStyle 2>/dev/null || echo "Light"', { encoding: 'utf8' }).trim();
+        return theme === 'Dark';
+      }
+    } catch (error) {
+      console.log('Could not detect dark mode, defaulting to light');
+    }
+    return false;
+  }
+
+  // 新增：设置托盘图标类型
+  setTrayIconType(iconType) {
+    const validTypes = ['tray', 'logo', 'system'];
+    if (!validTypes.includes(iconType)) {
+      console.error(`Invalid icon type: ${iconType}`);
+      return;
+    }
+    
+    this.store.set('trayIconType', iconType);
+    
+    // 重新创建托盘图标
+    if (this.tray) {
+      this.tray.destroy();
+      this.createTray();
+    }
+    
+    let message;
+    switch (iconType) {
+      case 'logo':
+        message = '托盘图标已切换为主Logo';
+        break;
+      case 'system':
+        message = '托盘图标已切换为系统默认';
+        break;
+      default:
+        message = '托盘图标已切换为专用图标';
+    }
+    
+    this.showNotification('K380 Manager', message);
   }
 
   updateTrayMenu() {
@@ -193,6 +340,7 @@ class K380Manager {
     const autoApply = this.store.get('autoApply', true);
     const showWindowOnStart = this.store.get('showWindowOnStart', true);
     const passwordCacheTime = this.store.get('passwordCacheTime', 5);
+    const trayIconType = this.store.get('trayIconType', 'tray');
     
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -261,6 +409,29 @@ class K380Manager {
           }
         ]
       },
+      {
+        label: '托盘图标样式',
+        submenu: [
+          {
+            label: '专用图标',
+            type: 'radio',
+            checked: trayIconType === 'tray',
+            click: () => this.setTrayIconType('tray')
+          },
+          {
+            label: '主Logo',
+            type: 'radio',
+            checked: trayIconType === 'logo',
+            click: () => this.setTrayIconType('logo')
+          },
+          {
+            label: '系统默认',
+            type: 'radio',
+            checked: trayIconType === 'system',
+            click: () => this.setTrayIconType('system')
+          }
+        ]
+      },
       { type: 'separator' },
       {
         label: '检查 K380 连接',
@@ -287,6 +458,8 @@ class K380Manager {
       {
         label: '退出',
         click: () => {
+          console.log('User clicked exit from tray menu');
+          this.isQuitting = true;
           this.cleanup();
           app.quit();
         }
@@ -328,17 +501,176 @@ class K380Manager {
     return new Promise(async (resolve, reject) => {
       const k380Path = this.getExecutablePath('k380_improved');
       
+      this.addDebugLog(`📱 执行K380命令: ${k380Path} -f ${mode}`);
+      this.addDebugLog(`🔍 当前时间: ${new Date().toISOString()}`);
+      this.addDebugLog(`🎯 目标模式: ${mode} (${mode === 'on' ? 'Fn键直接访问' : '媒体键优先'})`);
+      
       // 检查文件是否存在
       if (!fs.existsSync(k380Path)) {
+        const error = `K380 executable not found at: ${k380Path}`;
+        this.addDebugLog(`❌ ${error}`);
         reject(new Error('K380 executable not found. Please rebuild the application.'));
         return;
       }
       
+      // 检查文件权限
+      try {
+        fs.accessSync(k380Path, fs.constants.F_OK | fs.constants.X_OK);
+        this.addDebugLog('✅ K380可执行文件存在且有执行权限');
+      } catch (accessError) {
+        this.addDebugLog(`❌ K380可执行文件访问错误: ${accessError.message}`);
+        reject(new Error(`无法访问 K380 可执行文件: ${accessError.message}`));
+        return;
+      }
+      
       // 尝试不带sudo运行
-      exec(`"${k380Path}" -f ${mode}`, (error, stdout, stderr) => {
+      this.addDebugLog('🔄 尝试直接执行（无sudo）...');
+      const startTime = Date.now();
+      
+      exec(`"${k380Path}" -f ${mode}`, { timeout: 10000 }, (error, stdout, stderr) => {
+        const endTime = Date.now();
+        const executionTime = endTime - startTime;
+        
+        this.addDebugLog(`⏱️ 命令执行耗时: ${executionTime}ms`);
+        this.addDebugLog('📋 命令执行结果:');
+        this.addDebugLog(`- 错误信息: ${error?.message || 'none'}`);
+        this.addDebugLog(`- 标准输出: ${stdout || 'empty'}`);
+        this.addDebugLog(`- 错误输出: ${stderr || 'empty'}`);
+        
         if (!error) {
-          console.log('K380 output:', stdout);
+          this.addDebugLog('🎉 命令执行成功（无需sudo）');
+          this.verifyK380Setting(mode, stdout);
           resolve(stdout);
+          return;
+        }
+        
+        // 检查是否是K380设备问题
+        if (stdout.includes('K380 not found') || stdout.includes('cannot be opened') || 
+            stderr.includes('K380 not found') || stderr.includes('cannot be opened')) {
+          this.addDebugLog('❌ K380设备访问被拒绝，立即尝试使用sudo...');
+          
+          // 直接尝试使用sudo，而不是先报错
+          this.getPasswordWithCache().then(password => {
+            this.addDebugLog(`🔑 密码提示完成: ${password ? '已获取密码' : '已取消'}`);
+            
+            if (!password) {
+              // 如果是打包后的应用，提供特殊的错误信息和解决方案
+              if (app.isPackaged) {
+                reject(new Error(`无法访问 K380 设备。这通常是因为 macOS 安全限制。
+
+解决方法：
+1. 打开"系统设置" → "隐私与安全性" → "输入监控"
+2. 添加此应用：${process.execPath.replace('.app/Contents/MacOS/K380 Function Keys Manager', '.app')}
+3. 确保应用已勾选
+4. 完全退出并重启此应用
+
+如果问题持续存在：
+• 尝试重启系统
+• 检查 K380 是否通过蓝牙正确连接
+• 确保没有其他应用占用 K380 设备`));
+              } else {
+                reject(new Error('K380 设备未找到或无法访问。请检查蓝牙连接状态。'));
+              }
+              return;
+            }
+            
+            // 使用spawn而不是exec，避免密码泄露
+            this.addDebugLog('🚀 使用sudo执行命令（设备访问失败后的重试）...');
+            const sudoStartTime = Date.now();
+            const child = spawn('sudo', ['-S', k380Path, '-f', mode], {
+              stdio: ['pipe', 'pipe', 'pipe']
+            });
+            
+            let sudoStdout = '';
+            let sudoStderr = '';
+            
+            // 发送密码
+            child.stdin.write(password + '\n');
+            child.stdin.end();
+            
+            child.stdout.on('data', (data) => {
+              sudoStdout += data.toString();
+            });
+            
+            child.stderr.on('data', (data) => {
+              sudoStderr += data.toString();
+            });
+            
+            child.on('close', (code) => {
+              const sudoEndTime = Date.now();
+              const sudoExecutionTime = sudoEndTime - sudoStartTime;
+              
+              this.addDebugLog(`⏱️ Sudo命令执行耗时: ${sudoExecutionTime}ms`);
+              this.addDebugLog('📋 Sudo命令执行结果:');
+              this.addDebugLog(`- 退出代码: ${code}`);
+              this.addDebugLog(`- 标准输出: ${sudoStdout || 'empty'}`);
+              this.addDebugLog(`- 错误输出: ${sudoStderr || 'empty'}`);
+              
+              if (code === 0) {
+                // 密码正确，更新缓存
+                this.updatePasswordCache(password);
+                this.addDebugLog('🎉 Sudo命令执行成功（设备访问重试）');
+                this.verifyK380Setting(mode, sudoStdout);
+                resolve(sudoStdout);
+              } else {
+                this.addDebugLog('❌ Sudo命令执行失败（设备访问重试）');
+                
+                // 检查K380设备问题（即使使用sudo也无法访问）
+                if (sudoStdout.includes('K380 not found') || sudoStdout.includes('cannot be opened') || 
+                    sudoStderr.includes('K380 not found') || sudoStderr.includes('cannot be opened')) {
+                  
+                  if (app.isPackaged) {
+                    reject(new Error(`即使使用管理员权限也无法访问 K380 设备。
+
+可能的原因和解决方法：
+
+1. 权限设置问题：
+   • 打开"系统设置" → "隐私与安全性" → "输入监控"
+   • 确保此应用已添加并勾选
+   • 完全退出并重启应用
+
+2. K380 连接问题：
+   • 确保 K380 通过蓝牙已正确连接
+   • 尝试断开并重新连接 K380
+   • 检查系统蓝牙设置中的设备状态
+
+3. 系统安全限制：
+   • 尝试重启系统
+   • 在"安全性与隐私"中允许下载的应用运行
+
+4. 设备冲突：
+   • 确保没有其他应用正在使用 K380
+   • 关闭可能占用键盘的其他工具`));
+                  } else {
+                    reject(new Error('K380 设备未找到或无法访问，即使使用管理员权限。请检查设备连接状态。'));
+                  }
+                  return;
+                }
+                
+                // 检查具体的错误类型
+                if (sudoStderr.includes('not permitted') || sudoStdout.includes('not permitted') ||
+                    sudoStderr.includes('privilege violation') || sudoStdout.includes('privilege violation')) {
+                  reject(new Error('权限被拒绝。请在系统设置中添加应用到"输入监控"权限列表，然后重启应用。'));
+                } else if (sudoStderr.includes('Sorry, try again') || sudoStderr.includes('incorrect password')) {
+                  // 密码错误，清除缓存
+                  this.clearPasswordCache();
+                  reject(new Error('密码错误，请重试。'));
+                } else if (sudoStderr.includes('Unable to open device') || sudoStdout.includes('Unable to open device')) {
+                  reject(new Error('无法打开 K380 设备。请确保设备已连接且权限设置正确。'));
+                } else if (sudoStderr.includes('dyld') || sudoStderr.includes('Library not loaded')) {
+                  reject(new Error('动态库加载失败。请重新构建应用程序。'));
+                } else {
+                  reject(new Error(`命令执行失败 (退出代码: ${code}): ${sudoStderr || sudoStdout || '未知错误'}`));
+                }
+              }
+            });
+            
+            child.on('error', (err) => {
+              this.addDebugLog(`❌ 进程启动错误: ${err.message}`);
+              reject(new Error(`执行命令时出错: ${err.message}`));
+            });
+            
+          }).catch(reject);
           return;
         }
         
@@ -346,13 +678,24 @@ class K380Manager {
         if (error.message.includes('not permitted') || error.message.includes('unable to open device') ||
             stderr.includes('not permitted') || stdout.includes('not permitted') ||
             stderr.includes('privilege violation') || stdout.includes('privilege violation')) {
+          this.addDebugLog('❌ 权限被拒绝，需要HID访问权限');
           reject(new Error('权限被拒绝。请在系统设置中添加应用到"输入监控"权限列表，然后重启应用。'));
           return;
         }
         
-        // 如果是其他错误，检查是否有缓存的密码
+        // 检查是否是依赖库问题
+        if (error.message.includes('dyld') || stderr.includes('dyld') || 
+            error.message.includes('Library not loaded') || stderr.includes('Library not loaded')) {
+          this.addDebugLog('❌ 动态库加载错误');
+          this.addDebugLog('Library loading error - this might be a dependency issue');
+          reject(new Error('动态库加载失败。这可能是因为缺少依赖库。请重新构建应用程序。'));
+          return;
+        }
+        
+        // 如果是其他错误，尝试使用sudo
+        this.addDebugLog('🔐 直接执行失败，尝试使用sudo...');
         this.getPasswordWithCache().then(password => {
-          console.log('Password prompt completed:', password ? 'received' : 'cancelled');
+          this.addDebugLog(`🔑 密码提示完成: ${password ? '已获取密码' : '已取消'}`);
           
           if (!password) {
             reject(new Error('需要管理员密码来配置 K380 设备'));
@@ -360,6 +703,8 @@ class K380Manager {
           }
           
           // 使用spawn而不是exec，避免密码泄露
+          this.addDebugLog('🚀 使用sudo执行命令...');
+          const sudoStartTime = Date.now();
           const child = spawn('sudo', ['-S', k380Path, '-f', mode], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
@@ -380,15 +725,55 @@ class K380Manager {
           });
           
           child.on('close', (code) => {
-            console.log('Command exit code:', code);
-            console.log('Command stdout:', stdout);
+            const sudoEndTime = Date.now();
+            const sudoExecutionTime = sudoEndTime - sudoStartTime;
+            
+            this.addDebugLog(`⏱️ Sudo命令执行耗时: ${sudoExecutionTime}ms`);
+            this.addDebugLog('📋 Sudo命令执行结果:');
+            this.addDebugLog(`- 退出代码: ${code}`);
+            this.addDebugLog(`- 标准输出: ${stdout || 'empty'}`);
+            this.addDebugLog(`- 错误输出: ${stderr || 'empty'}`);
             
             if (code === 0) {
               // 密码正确，更新缓存
               this.updatePasswordCache(password);
+              this.addDebugLog('🎉 Sudo命令执行成功');
+              this.verifyK380Setting(mode, stdout);
               resolve(stdout);
             } else {
-              console.log('Command stderr:', stderr);
+              this.addDebugLog('❌ Sudo命令执行失败');
+              
+              // 检查K380设备问题（即使使用sudo也无法访问）
+              if (stdout.includes('K380 not found') || stdout.includes('cannot be opened') || 
+                  stderr.includes('K380 not found') || stderr.includes('cannot be opened')) {
+                
+                if (app.isPackaged) {
+                  reject(new Error(`即使使用管理员权限也无法访问 K380 设备。
+
+可能的原因和解决方法：
+
+1. 权限设置问题：
+   • 打开"系统设置" → "隐私与安全性" → "输入监控"
+   • 确保此应用已添加并勾选
+   • 完全退出并重启应用
+
+2. K380 连接问题：
+   • 确保 K380 通过蓝牙已正确连接
+   • 尝试断开并重新连接 K380
+   • 检查系统蓝牙设置中的设备状态
+
+3. 系统安全限制：
+   • 尝试重启系统
+   • 在"安全性与隐私"中允许下载的应用运行
+
+4. 设备冲突：
+   • 确保没有其他应用正在使用 K380
+   • 关闭可能占用键盘的其他工具`));
+                } else {
+                  reject(new Error('K380 设备未找到或无法访问，即使使用管理员权限。请检查设备连接状态。'));
+                }
+                return;
+              }
               
               // 检查具体的错误类型
               if (stderr.includes('not permitted') || stdout.includes('not permitted') ||
@@ -400,19 +785,42 @@ class K380Manager {
                 reject(new Error('密码错误，请重试。'));
               } else if (stderr.includes('Unable to open device') || stdout.includes('Unable to open device')) {
                 reject(new Error('无法打开 K380 设备。请确保设备已连接且权限设置正确。'));
+              } else if (stderr.includes('dyld') || stderr.includes('Library not loaded')) {
+                reject(new Error('动态库加载失败。请重新构建应用程序。'));
               } else {
-                reject(new Error(`命令执行失败 (退出代码: ${code})`));
+                reject(new Error(`命令执行失败 (退出代码: ${code}): ${stderr || stdout || '未知错误'}`));
               }
             }
           });
           
           child.on('error', (err) => {
+            this.addDebugLog(`❌ 进程启动错误: ${err.message}`);
             reject(new Error(`执行命令时出错: ${err.message}`));
           });
           
         }).catch(reject);
       });
     });
+  }
+
+  // 新增：验证K380设置是否真的生效了
+  verifyK380Setting(expectedMode, commandOutput) {
+    this.addDebugLog(`🔍 验证K380设置是否生效...`);
+    this.addDebugLog(`📝 期望模式: ${expectedMode}`);
+    this.addDebugLog(`📄 命令输出: ${commandOutput}`);
+    
+    // 检查命令输出中的关键信息
+    if (commandOutput.includes('Success') || commandOutput.includes('successfully')) {
+      this.addDebugLog('✅ 命令报告执行成功');
+    } else if (commandOutput.includes('Failed') || commandOutput.includes('Error')) {
+      this.addDebugLog('❌ 命令报告执行失败');
+    } else {
+      this.addDebugLog('⚠️ 命令输出不明确，无法确定是否成功');
+    }
+    
+    // 更新内部状态
+    this.lastAppliedState = expectedMode === 'on';
+    this.addDebugLog(`💾 已更新内部状态: ${this.lastAppliedState ? 'Fn键直接访问' : '媒体键优先'}`);
   }
 
   async getPasswordWithCache() {
@@ -903,6 +1311,60 @@ class K380Manager {
       
       console.log('Persistent password cache setting updated:', enabled);
     });
+
+    // 添加调试信息处理程序
+    ipcMain.handle('test-k380-executable', async () => {
+      try {
+        const k380Path = this.getExecutablePath('k380_improved');
+        console.log('🔧 测试K380可执行文件...');
+        
+        if (!fs.existsSync(k380Path)) {
+          return { success: false, error: 'K380 executable not found', path: k380Path };
+        }
+        
+        const stats = fs.statSync(k380Path);
+        const hasExecutePermission = (stats.mode & parseInt('111', 8)) !== 0;
+        
+        return {
+          success: true,
+          path: k380Path,
+          permissions: stats.mode.toString(8),
+          hasExecutePermission,
+          size: stats.size,
+          modified: stats.mtime.toISOString()
+        };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('get-debug-info', async () => {
+      return {
+        isPackaged: app.isPackaged,
+        execPath: process.execPath,
+        resourcesPath: process.resourcesPath,
+        isK380Connected: this.isK380Connected,
+        lastAppliedState: this.lastAppliedState,
+        monitoringActive: this.monitoringActive,
+        persistentPasswordCache: this.persistentPasswordCache,
+        fnKeysEnabled: this.store.get('fnKeysEnabled', true),
+        platform: process.platform,
+        arch: process.arch,
+        version: {
+          node: process.version,
+          electron: process.versions.electron
+        }
+      };
+    });
+
+    ipcMain.handle('get-debug-logs', async () => {
+      return this.debugLogs;
+    });
+
+    ipcMain.handle('clear-debug-logs', async () => {
+      this.debugLogs = [];
+      return true;
+    });
   }
   
   async handleToggleAutoStart(enabled) {
@@ -1263,6 +1725,11 @@ ${hidResult.error || 'Unknown error'}
 
     this.mainWindow.loadFile(path.join(__dirname, 'renderer.html'));
 
+    // 在开发模式或调试模式下自动打开开发者工具
+    if (!app.isPackaged || process.env.DEBUG === 'true') {
+      this.mainWindow.webContents.openDevTools();
+    }
+
     this.mainWindow.on('close', (event) => {
       event.preventDefault();
       this.mainWindow.hide();
@@ -1322,11 +1789,57 @@ ${hidResult.error || 'Unknown error'}
   }
 
   cleanup() {
+    console.log('Starting cleanup process...');
+    
+    // 停止蓝牙监控
     this.stopBluetoothMonitoring();
-    this.clearPasswordCache(false); // 应用退出时不清除持久化密码缓存
+    
+    // 清除密码缓存（但保留持久化缓存）
+    this.clearPasswordCache(false);
+    
+    // 销毁托盘图标
     if (this.tray) {
+      console.log('Destroying tray icon...');
       this.tray.destroy();
+      this.tray = null;
     }
+    
+    // 关闭主窗口
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      console.log('Closing main window...');
+      this.mainWindow.removeAllListeners(); // 移除所有监听器
+      this.mainWindow.destroy();
+      this.mainWindow = null;
+    }
+    
+    // 清理IPC监听器
+    if (this.isQuitting) {
+      console.log('Removing IPC listeners...');
+      ipcMain.removeAllListeners();
+    }
+    
+    // 标记清理完成
+    console.log('Cleanup completed');
+  }
+
+  // 添加调试日志方法
+  addDebugLog(message) {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}`;
+    this.debugLogs.push(logEntry);
+    
+    // 只保留最近的100条日志
+    if (this.debugLogs.length > 100) {
+      this.debugLogs = this.debugLogs.slice(-100);
+    }
+    
+    // 发送到前端显示
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('debug-log', logEntry);
+    }
+    
+    // 同时输出到控制台
+    console.log(message);
   }
 }
 
@@ -1359,10 +1872,26 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', (event) => {
-  event.preventDefault();
+  // 在 macOS 上，即使所有窗口关闭，应用通常仍保持活跃状态
+  // 但如果没有托盘图标，则应该退出应用
+  if (process.platform !== 'darwin' || !k380Manager?.tray) {
+    if (k380Manager) {
+      k380Manager.cleanup();
+    }
+    app.quit();
+  }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  console.log('App is about to quit, cleaning up...');
+  if (k380Manager) {
+    k380Manager.isQuitting = true; // 标记正在退出
+    k380Manager.cleanup();
+  }
+});
+
+app.on('will-quit', (event) => {
+  console.log('App will quit, final cleanup...');
   if (k380Manager) {
     k380Manager.cleanup();
   }

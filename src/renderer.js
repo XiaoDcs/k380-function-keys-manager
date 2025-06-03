@@ -50,6 +50,10 @@ class K380RendererManager {
         this.permissionStatus = document.getElementById('permissionStatus');
         this.checkPermissionsBtn = document.getElementById('checkPermissionsBtn');
         this.openSystemSettingsBtn = document.getElementById('openSystemSettingsBtn');
+        this.testK380ExecutableBtn = document.getElementById('testK380ExecutableBtn');
+        this.showDebugInfoBtn = document.getElementById('showDebugInfoBtn');
+        this.showDebugLogsBtn = document.getElementById('showDebugLogsBtn');
+        this.clearDebugLogsBtn = document.getElementById('clearDebugLogsBtn');
         
         // 关于
         this.visitGithubBtn = document.getElementById('visitGithubBtn');
@@ -313,6 +317,34 @@ class K380RendererManager {
                 this.openSystemSettingsBtn.addEventListener('click', () => {
                     console.log('Open system settings button clicked');
                     this.openSystemSettings();
+                });
+            }
+
+            if (this.testK380ExecutableBtn) {
+                this.testK380ExecutableBtn.addEventListener('click', () => {
+                    console.log('Test K380 executable button clicked');
+                    this.testK380Executable();
+                });
+            }
+
+            if (this.showDebugInfoBtn) {
+                this.showDebugInfoBtn.addEventListener('click', () => {
+                    console.log('Show debug info button clicked');
+                    this.showDebugInfo();
+                });
+            }
+
+            if (this.showDebugLogsBtn) {
+                this.showDebugLogsBtn.addEventListener('click', () => {
+                    console.log('Show debug logs button clicked');
+                    this.showDebugLogs();
+                });
+            }
+
+            if (this.clearDebugLogsBtn) {
+                this.clearDebugLogsBtn.addEventListener('click', () => {
+                    console.log('Clear debug logs button clicked');
+                    this.clearDebugLogs();
                 });
             }
 
@@ -666,6 +698,126 @@ class K380RendererManager {
         // 通知主进程打开系统设置
         ipcRenderer.send('open-system-settings');
         this.showNotification('info', '正在打开系统设置...');
+    }
+
+    async testK380Executable() {
+        try {
+            console.log('Testing K380 executable...');
+            const result = await ipcRenderer.invoke('test-k380-executable');
+            
+            let message = '🔧 K380可执行文件测试结果:\n\n';
+            
+            if (result.success) {
+                message += `✅ 文件存在\n`;
+                message += `📁 路径: ${result.path}\n`;
+                message += `🔐 权限: ${result.permissions}\n`;
+                message += `⚡ 可执行: ${result.hasExecutePermission ? '是' : '否'}\n`;
+                message += `📏 大小: ${result.size} bytes\n`;
+                message += `📅 修改时间: ${result.modified}`;
+            } else {
+                message += `❌ 测试失败\n`;
+                message += `📁 查找路径: ${result.path}\n`;
+                message += `❌ 错误: ${result.error}`;
+            }
+            
+            alert(message);
+            
+        } catch (error) {
+            console.error('Test K380 executable error:', error);
+            this.showNotification('error', '测试K380可执行文件失败: ' + error.message);
+        }
+    }
+
+    async showDebugInfo() {
+        try {
+            console.log('Getting debug info...');
+            const debugInfo = await ipcRenderer.invoke('get-debug-info');
+            
+            let message = '🐛 调试信息:\n\n';
+            message += `📦 已打包: ${debugInfo.isPackaged ? '是' : '否'}\n`;
+            message += `📁 执行路径: ${debugInfo.execPath}\n`;
+            message += `📂 资源路径: ${debugInfo.resourcesPath}\n`;
+            message += `🔗 K380连接: ${debugInfo.isK380Connected ? '已连接' : '未连接'}\n`;
+            message += `⚙️ 最后应用状态: ${debugInfo.lastAppliedState !== null ? (debugInfo.lastAppliedState ? 'Fn键直接访问' : '媒体键优先') : '未知'}\n`;
+            message += `📡 监控活跃: ${debugInfo.monitoringActive ? '是' : '否'}\n`;
+            message += `🗝️ 持久化密码缓存: ${debugInfo.persistentPasswordCache ? '启用' : '禁用'}\n`;
+            message += `🎹 Fn键设置: ${debugInfo.fnKeysEnabled ? '启用' : '禁用'}\n`;
+            message += `💻 平台: ${debugInfo.platform}\n`;
+            message += `🏗️ 架构: ${debugInfo.arch}\n`;
+            message += `🔧 Node版本: ${debugInfo.version.node}\n`;
+            message += `⚡ Electron版本: ${debugInfo.version.electron}`;
+            
+            alert(message);
+            
+        } catch (error) {
+            console.error('Get debug info error:', error);
+            this.showNotification('error', '获取调试信息失败: ' + error.message);
+        }
+    }
+
+    async showDebugLogs() {
+        try {
+            console.log('Getting debug logs...');
+            const logs = await ipcRenderer.invoke('get-debug-logs');
+            
+            if (logs.length === 0) {
+                alert('📋 调试日志为空\n\n没有找到任何调试日志。请尝试执行一些操作（如切换Fn键设置）来生成日志。');
+                return;
+            }
+            
+            // 只显示最近的20条日志
+            const recentLogs = logs.slice(-20);
+            let message = `📋 实时调试日志 (最近${recentLogs.length}条):\n\n`;
+            message += recentLogs.join('\n');
+            
+            // 创建一个可滚动的弹窗
+            const logWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
+            logWindow.document.write(`
+                <html>
+                <head>
+                    <title>K380 调试日志</title>
+                    <style>
+                        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #ffffff; }
+                        .log-entry { margin-bottom: 5px; word-wrap: break-word; }
+                        .timestamp { color: #888; }
+                        .emoji { color: #ffd700; }
+                    </style>
+                </head>
+                <body>
+                    <h2>🔍 K380 实时调试日志</h2>
+                    <p>总共 ${logs.length} 条日志，显示最近 ${recentLogs.length} 条：</p>
+                    <hr>
+                    <div id="logs">
+                        ${recentLogs.map(log => `<div class="log-entry">${this.escapeHtml(log)}</div>`).join('')}
+                    </div>
+                    <hr>
+                    <button onclick="window.close()">关闭</button>
+                </body>
+                </html>
+            `);
+            
+        } catch (error) {
+            console.error('Get debug logs error:', error);
+            this.showNotification('error', '获取调试日志失败: ' + error.message);
+        }
+    }
+
+    async clearDebugLogs() {
+        try {
+            console.log('Clearing debug logs...');
+            await ipcRenderer.invoke('clear-debug-logs');
+            this.showNotification('success', '调试日志已清除');
+            
+        } catch (error) {
+            console.error('Clear debug logs error:', error);
+            this.showNotification('error', '清除调试日志失败: ' + error.message);
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     visitGithub() {

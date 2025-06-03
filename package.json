@@ -34,6 +34,7 @@
     },
     "files": [
       "src/**/*",
+      "assets/**/*",
       "tools/*.sh",
       "tools/*.c",
       "tools/hidapi.h",
@@ -53,6 +54,14 @@
       {
         "from": "bin/test_hid",
         "to": "bin/test_hid"
+      },
+      {
+        "from": "bin/libhidapi.0.dylib",
+        "to": "bin/libhidapi.0.dylib"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
       }
     ],
     "mac": {
@@ -61,6 +70,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "icon": "assets/icons/icon.png",
       "target": [
         {
           "target": "dmg",
@@ -86,6 +96,12 @@
           "path": "/Applications"
         }
       ]
+    },
+    "win": {
+      "icon": "assets/icons/icon.png"
+    },
+    "linux": { 
+      "icon": "assets/icons/icon.png"
     },
     "afterPack": "scripts/afterPack.js"
   }
