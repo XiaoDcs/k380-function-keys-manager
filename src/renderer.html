@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K380 Function Keys Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+            background: #f5f5f7;
+            color: #1d1d1f;
+            overflow-y: auto;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            color: #1d1d1f;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            color: #86868b;
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .tab-nav {
+            display: flex;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 8px 12px;
+            background: none;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #86868b;
+        }
+
+        .tab-btn.active {
+            background: #007aff;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 122, 255, 0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.04);
+            box-shadow: 
+                0 2px 8px rgba(0, 0, 0, 0.04),
+                0 1px 2px rgba(0, 0, 0, 0.06);
+        }
+
+        .status-section {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 14px;
+            margin-bottom: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .status-connected {
+            background: rgba(52, 199, 89, 0.1);
+            color: #30d158;
+            border: 1px solid rgba(52, 199, 89, 0.2);
+        }
+
+        .status-disconnected {
+            background: rgba(255, 59, 48, 0.1);
+            color: #ff453a;
+            border: 1px solid rgba(255, 59, 48, 0.2);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-connected .status-dot {
+            background: #30d158;
+        }
+
+        .status-disconnected .status-dot {
+            background: #ff453a;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 15px;
+            color: #1d1d1f;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 51px;
+            height: 31px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #e5e5ea;
+            transition: .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 31px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 27px;
+            width: 27px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        input:checked + .slider {
+            background-color: #30d158;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: #007aff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056cc;
+        }
+
+        .btn-secondary {
+            background: #f2f2f7;
+            color: #1d1d1f;
+            border: 1px solid #d1d1d6;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e5ea;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+        }
+
+        .select-group {
+            margin-bottom: 16px;
+        }
+
+        .select-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 15px;
+            color: #1d1d1f;
+        }
+
+        .custom-select {
+            position: relative;
+            width: 100%;
+        }
+
+        .custom-select select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #d1d1d6;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xIDFMNiA2TDExIDEiIHN0cm9rZT0iIzg2ODY4QiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 40px;
+        }
+
+        .custom-select select:focus {
+            outline: none;
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+        }
+
+        .description {
+            font-size: 13px;
+            color: #86868b;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        .info-card {
+            background: rgba(0, 122, 255, 0.1);
+            border: 1px solid rgba(0, 122, 255, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .info-card h3 {
+            color: #007aff;
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .info-card p {
+            color: #1d1d1f;
+            font-size: 14px;
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+
+        .info-card p:last-child {
+            margin-bottom: 0;
+        }
+
+        .version-info {
+            text-align: center;
+            padding: 16px;
+            color: #86868b;
+            font-size: 13px;
+        }
+
+        .permission-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .permission-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .permission-ok {
+            background: #30d158;
+        }
+
+        .permission-error {
+            background: #ff453a;
+        }
+
+        .permission-warning {
+            background: #ff9f0a;
+        }
+
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1c1c1e;
+                color: #ffffff;
+            }
+
+            .header h1 {
+                color: #ffffff;
+            }
+
+            .card, .tab-nav {
+                background: rgba(28, 28, 30, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .control-group label, .select-group label {
+                color: #ffffff;
+            }
+
+            .btn-secondary {
+                background: #2c2c2e;
+                color: #ffffff;
+                border: 1px solid #48484a;
+            }
+
+            .btn-secondary:hover {
+                background: #3a3a3c;
+            }
+
+            .slider {
+                background-color: #39393d;
+            }
+
+            .custom-select select {
+                background: #2c2c2e;
+                color: #ffffff;
+                border: 1px solid #48484a;
+            }
+
+            .info-card {
+                background: rgba(0, 122, 255, 0.2);
+            }
+
+            .info-card p {
+                color: #ffffff;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>K380 管理器</h1>
+            <p>罗技键盘功能键设置</p>
+        </div>
+
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="main">主要功能</button>
+            <button class="tab-btn" data-tab="settings">设置</button>
+            <button class="tab-btn" data-tab="tools">工具</button>
+            <button class="tab-btn" data-tab="about">关于</button>
+        </div>
+
+        <!-- 主要功能 -->
+        <div class="tab-content active" id="main">
+            <div class="card">
+                <div class="status-section">
+                    <div id="connectionStatus" class="status-indicator status-disconnected">
+                        <div class="status-dot"></div>
+                        <span>K380 未连接</span>
+                    </div>
+                    <button id="checkConnectionBtn" class="btn btn-small btn-secondary">检查连接</button>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="fnKeysToggle">Fn 键直接访问</label>
+                            <div class="description">
+                                启用后，按 F1-F12 键将直接触发功能键
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="fnKeysToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="applySettingsBtn" class="btn btn-primary">立即应用设置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置 -->
+        <div class="tab-content" id="settings">
+            <div class="card">
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="autoStartToggle">开机自启动</label>
+                            <div class="description">
+                                系统启动时自动运行此应用
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoStartToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="showWindowToggle">启动时显示窗口</label>
+                            <div class="description">
+                                应用启动时是否显示主窗口
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="showWindowToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="autoApplyToggle">自动应用设置</label>
+                            <div class="description">
+                                设备重连时自动重新应用设置
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoApplyToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="select-group">
+                    <label for="passwordCacheSelect">密码缓存时间</label>
+                    <div class="custom-select">
+                        <select id="passwordCacheSelect">
+                            <option value="1">1分钟</option>
+                            <option value="5" selected>5分钟 (推荐)</option>
+                            <option value="15">15分钟</option>
+                            <option value="30">30分钟</option>
+                            <option value="0">永不过期</option>
+                        </select>
+                    </div>
+                    <div class="description">
+                        设置管理员密码的缓存时间，减少重复输入
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="persistentPasswordCacheToggle">持久化密码缓存</label>
+                            <div class="description">
+                                重启应用后仍保留密码缓存（加密存储）
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="persistentPasswordCacheToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="skipPermissionCheckToggle">禁用权限检查提醒</label>
+                            <div class="description">
+                                启动时不再弹出权限设置提醒
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="skipPermissionCheckToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="showDockIconToggle">显示 Dock 图标</label>
+                            <div class="description">
+                                在底部 Dock 栏中显示应用图标
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="showDockIconToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <div>
+                            <label for="showTrayIconToggle">显示顶部栏图标</label>
+                            <div class="description">
+                                在顶部菜单栏中显示系统托盘图标
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="showTrayIconToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 工具 -->
+        <div class="tab-content" id="tools">
+            <div class="card">
+                <div class="permission-status" id="permissionStatus">
+                    <div class="permission-dot permission-warning"></div>
+                    <span>权限状态检查中...</span>
+                </div>
+
+                <div class="button-group">
+                    <button id="checkPermissionsBtn" class="btn btn-secondary">检查权限</button>
+                    <button id="openSystemSettingsBtn" class="btn btn-secondary">系统设置</button>
+                </div>
+            </div>
+
+            <div class="info-card">
+                <h3>权限设置指南</h3>
+                <p>1. 打开 系统设置 → 隐私与安全性 → 输入监控</p>
+                <p>2. 添加此应用到权限列表</p>
+                <p>3. 确保应用已勾选</p>
+                <p>4. 重启应用生效</p>
+            </div>
+        </div>
+
+        <!-- 关于 -->
+        <div class="tab-content" id="about">
+            <div class="card">
+                <div class="version-info">
+                    <h2>K380 Function Keys Manager</h2>
+                    <p>版本 1.0.0</p>
+                    <p style="margin-top: 16px;">用于管理罗技 K380 蓝牙键盘的 Fn 键行为</p>
+                </div>
+
+                <div class="button-group">
+                    <button id="hideWindowBtn" class="btn btn-secondary">隐藏窗口</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html> 

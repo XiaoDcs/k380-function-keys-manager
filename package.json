@@ -1,0 +1,92 @@
+{
+  "name": "k380-function-keys-gui",
+  "version": "1.0.0",
+  "description": "Logitech K380 Function Keys Configuration GUI",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "npm run build-binaries && electron-builder",
+    "build-binaries": "cd tools && ./build_improved.sh && cd ..",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish=never",
+    "rebuild": "electron-rebuild -f -w serialport",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "cd tools && ./quick_test.sh",
+    "permissions": "cd tools && ./fix_permissions.sh"
+  },
+  "author": "K380 GUI",
+  "license": "GPL-3.0",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4",
+    "electron-rebuild": "^3.2.9"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "auto-launch": "^5.0.5",
+    "node-hid": "^2.1.2"
+  },
+  "build": {
+    "appId": "com.k380gui.app",
+    "productName": "K380 Function Keys Manager",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "tools/*.sh",
+      "tools/*.c",
+      "tools/hidapi.h",
+      "docs/README.md",
+      "LICENSE",
+      "!bin"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/k380",
+        "to": "bin/k380"
+      },
+      {
+        "from": "bin/k380_improved", 
+        "to": "bin/k380_improved"
+      },
+      {
+        "from": "bin/test_hid",
+        "to": "bin/test_hid"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "K380 Function Keys Manager",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "afterPack": "scripts/afterPack.js"
+  }
+} 
